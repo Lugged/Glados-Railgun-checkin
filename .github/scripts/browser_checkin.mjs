@@ -10,23 +10,35 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 function log(...a) { console.log(new Date().toISOString(), ...a); }
 
+function pairsFromHeader(str) {
+  const out = [];
+  for (const kv of String(str).split(';')) {
+    const i = kv.indexOf('=');
+    if (i > 0) out.push([kv.slice(0, i).trim(), kv.slice(i + 1).trim()]);
+  }
+  return out;
+}
+
 function parseCookies() {
-  const pairs = [];
-  const push = (name, value) => { if (name && value !== undefined) pairs.push([name.trim(), String(value).trim()]); };
   const s = COOKIE_RAW;
+  log(`cookie 长度 ${s.length}，首字符 ${JSON.stringify(s.slice(0, 1))}`);
   if (s.startsWith('[') || s.startsWith('{')) {
     try {
       const arr = JSON.parse(s);
+      const out = [];
       for (const c of Array.isArray(arr) ? arr : [arr]) {
-        if (c.name) push(c.name, c.value);
-        else if (c.cookie) for (const kv of String(c.cookie).split(';')) { const i = kv.indexOf('='); if (i > 0) push(kv.slice(0, i), kv.slice(i + 1)); }
+        if (!c) continue;
+        if (typeof c === 'string') out.push(...pairsFromHeader(c));
+        else if (c.cookie) out.push(...pairsFromHeader(c.cookie));          // 官方格式 [{name,origin,cookie,user-agent}]
+        else if (c.name && c.value !== undefined) out.push([String(c.name), String(c.value)]);
+        else if (c.name && c.value === undefined) out.push(...pairsFromHeader(c.name));
       }
-      return pairs;
-    } catch (e) { log('cookie JSON 解析失败，回退文本解析', e.message); }
+      if (out.length) return out;
+      log('JSON 已解析但没取到 Cookie 键，回退文本解析');
+    } catch (e) { log('cookie JSON 解析失败，回退文本解析:', e.message); }
   }
   const str = s.includes('&') && !s.includes(';') ? s.split('&').join('; ') : s;
-  for (const kv of str.split(';')) { const i = kv.indexOf('='); if (i > 0) push(kv.slice(0, i), kv.slice(i + 1)); }
-  return pairs;
+  return pairsFromHeader(str);
 }
 
 async function push(title, desp) {
