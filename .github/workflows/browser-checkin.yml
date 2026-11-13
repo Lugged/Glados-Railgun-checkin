@@ -1,0 +1,49 @@
+name: GLaDOS Check-in (Browser)
+
+# 浏览器模式：用真实 Chromium 打开签到页，让页面自己完成 Cloudflare Turnstile 人机验证。
+# 与上游 checkin.py 完全独立，不修改上游任何文件，便于与官方同步。
+on:
+  workflow_dispatch:
+  schedule:
+    # GitHub cron 只支持 UTC；北京时间 09:18 / 12:18
+    - cron: '18 1,4 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: glados-browser-checkin
+  cancel-in-progress: false
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Playwright + Chromium
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+
+      - name: Run browser check-in
+        env:
+          GLADOS_COOKIES: ${{ secrets.GLADOS_COOKIES || secrets.COOKIES }}
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+        run: xvfb-run -a --server-args="-screen 0 1280x900x24" node .github/scripts/browser_checkin.mjs
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkin-screenshots
+          path: checkin-*.png
+          if-no-files-found: ignore
+          retention-days: 7
